@@ -1,8 +1,12 @@
 # Helpful Potato 🥔
 
+<p align="center"><img src="docs/img/cover.jpg" alt="Helpful Potato owner's manual cover" width="640"></p>
+
 *Not affiliated with any squad, geek or otherwise.* An unrooted Android phone becomes an AI agent's hands (USB/Bluetooth keyboard + mouse) and eyes (camera) for any computer, with nothing installed on the target. Internally the app and CLI are still called "Phone Hands".
 
 **Give an AI agent hands and eyes on a real computer, using an Android phone.**
+
+<p align="center"><img src="docs/img/fig2-old-phone.jpg" alt="Fig. 2: an old phone rescued from a junk drawer and given a new job" width="620"></p>
 
 > **Got an old phone in a drawer?** This is a second life for a retired Android phone. Prop it on a stand facing your monitor, plug it in (or pair over Bluetooth), and it becomes a remote keyboard, mouse and camera that an AI agent can use to work on that computer: no software on the target, no capture card, no $200 KVM box. Any Android 9+ phone with Bluetooth works for the wireless mode; Android 12+ is needed for the camera stream.
 >
@@ -13,6 +17,8 @@ Phone Hands turns an Android phone (developed on a Pixel) into a remote **keyboa
 > ⚠️ This is an experimental tool that can type and click on a computer. Read the [Security](#security-warning) section before using it.
 
 ## Architecture
+
+<p align="center"><img src="docs/img/fig1-setup.jpg" alt="Fig. 1: phone on a stand watching the monitor (eyes) and cabled to the computer (hands)" width="620"></p>
 
 ```mermaid
 flowchart LR
@@ -152,6 +158,8 @@ Served by the app's foreground service on **`127.0.0.1:8765` on the phone only**
 - `auto` (default): ch9329 when its adapter is open, else bluetooth. `status.activeBackend` shows which.
 
 ## Camera indicator and privacy
+
+<p align="center"><img src="docs/img/fig3-camera.jpg" alt="Retro manual notice: the red dot means the camera is on" width="520"></p>
 
 The phone **always shows when its camera is being captured**:
 - a high-importance ongoing notification "📷 Camera ON - remote viewing";
