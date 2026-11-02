@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If you refer to or build on this work, please cite it as below. This repository is a defensive publication (prior art) first published on 2026-11-01."
+title: "Helpful Potato"
+abstract: "An unrooted Android phone used as an AI agent's hands and eyes on a separate computer: the phone emulates a keyboard and mouse (Bluetooth HID via Android's BluetoothHidDevice API, or USB HID through a CH9329 serial-to-HID bridge driven from the phone over USB OTG) and its camera captures the computer's screen, controlled from a host over adb. Published as a technical disclosure / defensive publication."
+type: software
+authors:
+  - alias: "TravelerHacker"
+repository-code: "https://github.com/TravelerHacker/helpful-potato"
+url: "https://github.com/TravelerHacker/helpful-potato"
+license: "PolyForm-Noncommercial-1.0.0"
+version: "1.0.0"
+date-released: "2026-11-01"
+keywords:
+  - AI agent
+  - computer use
+  - Android
+  - Bluetooth HID
+  - USB HID
+  - CH9329
+  - scrcpy
+  - defensive publication
+  - prior art

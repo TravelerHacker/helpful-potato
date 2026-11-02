@@ -2,13 +2,15 @@
 
 <p align="center"><img src="docs/img/cover.jpg" alt="Helpful Potato owner's manual cover" width="640"></p>
 
+> **Note on this document.** The cartoons and retro "owner's manual" styling are presentation only. This repository is a complete, working, enabling technical disclosure: the source code, build script, tests and documentation are sufficient to build and use the system described. It was first published on **2026-11-01** as a defensive publication (prior art). The formal description is in [docs/TECHNICAL_DISCLOSURE.md](docs/TECHNICAL_DISCLOSURE.md); plain installation and usage instructions are in [docs/INSTALL.md](docs/INSTALL.md).
+
 *Not affiliated with any squad, geek or otherwise.* An unrooted Android phone becomes an AI agent's hands (USB/Bluetooth keyboard + mouse) and eyes (camera) for any computer, with nothing installed on the target. Internally the app and CLI are still called "Phone Hands".
 
 **Give an AI agent hands and eyes on a real computer, using an Android phone.**
 
 <p align="center"><img src="docs/img/fig2-old-phone.jpg" alt="Fig. 2: an old phone rescued from a junk drawer and given a new job" width="620"></p>
 
-> **Got an old phone in a drawer?** This is a second life for a retired Android phone. Prop it on a stand facing your monitor, plug it in (or pair over Bluetooth), and it becomes a remote keyboard, mouse and camera that an AI agent can use to work on that computer: no software on the target, no capture card, no $200 KVM box. Any Android 9+ phone with Bluetooth works for the wireless mode; Android 12+ is needed for the camera stream.
+> **Got an old phone in a drawer?** This is a second life for a retired Android phone. Prop it on a stand facing your monitor, plug it in (or pair over Bluetooth), and it becomes a remote keyboard, mouse and camera that an AI agent can use to work on that computer: no software on the target, no capture card, no $200 KVM box. Any Android 12+ phone whose Bluetooth supports the HID Device profile works for the wireless mode (the app's minimum is Android 12 / API 31, which is also what the camera stream needs).
 >
 > *iPhone?* Not supported yet. iOS doesn't let apps act as a Bluetooth keyboard/mouse or expose an adb-style debug connection. An old iPhone could still serve as the camera ("eyes") with a third-party webcam app, while a cheap USB bridge handles the "hands". Contributions welcome.
 
@@ -52,7 +54,7 @@ flowchart LR
 
 | Option | Status | What you need |
 |---|---|---|
-| **Bluetooth HID** | Works | An Android 9+ phone with `BluetoothHidDevice` support. Pair it with the target like a Bluetooth keyboard. |
+| **Bluetooth HID** | Works | An Android 12+ phone with `BluetoothHidDevice` support. Pair it with the target like a Bluetooth keyboard. |
 | **CH9329 cable** | Implemented, **untested on real hardware** | A CH9329 UART→USB-HID module, a USB-serial adapter (CH340/CH341/CH9102, CP210x, FTDI, PL2303), and a USB-C OTG adapter. The CH9329's USB side plugs into the target. No pairing needed, works in BIOS/login screens, and supports absolute mouse positioning. |
 | **ESP32-S3** | Idea / not implemented | An ESP32-S3 has native USB-OTG and can act as a USB HID device fed over serial or BLE. It could replace the CH9329 with a backend speaking the same API. Contributions welcome. |
 
@@ -67,6 +69,8 @@ Charging note: while the phone's single USB-C port is in OTG host mode it cannot
 | `common.py` | adb serial, port, and forward helpers |
 | `app/` | Android app source (plain Java, no Gradle). `app/build.sh` builds the APK |
 | `app/test/` | Unit tests for the CH9329 frame encoder (run on any JVM) |
+| `docs/INSTALL.md` | Step-by-step installation and usage guide |
+| `docs/TECHNICAL_DISCLOSURE.md` | Formal technical disclosure (defensive publication) |
 | `app/libs/` | Bundled [usb-serial-for-android](https://github.com/mik3y/usb-serial-for-android) 3.10.0 (MIT, license included) |
 
 ## Configuration (environment variables)
@@ -75,8 +79,9 @@ Charging note: while the phone's single USB-C port is in OTG host mode it cannot
 |---|---|---|
 | `PHONE_SERIAL` | *(required)* | adb serial of the phone, e.g. `R5CX12345` or `127.0.0.1:5555` (see `adb devices`) |
 | `ADB` | `adb` on `PATH` | path to the adb binary |
-| `SCRCPY` | `scrcpy` on `PATH` | path to scrcpy (v2.0+, for `--video-source=camera`) |
+| `SCRCPY` | `scrcpy` on `PATH` | path to scrcpy (v2.5+, for `--video-source=camera` and `--no-window`) |
 | `PHONE_HANDS_PORT` | `18765` | local port for the adb forward |
+| `LOOK_CAMERA` | `0` | default camera id for `look.py` |
 | `ANDROID_SDK` / `ANDROID_HOME` | `$HOME/android-sdk` | build.sh: SDK root |
 | `BUILD_TOOLS_VERSION` / `PLATFORM` | `37.0.0` / `android-37.0` | build.sh: SDK components |
 | `JAVA_HOME` | system java | build.sh / test: JDK 17+ |
@@ -84,7 +89,7 @@ Charging note: while the phone's single USB-C port is in OTG host mode it cannot
 
 ## Build and install
 
-Requirements: JDK 17+, Android SDK (build-tools + platform), Python 3, `adb`, and for the eyes `scrcpy` and `ffmpeg`.
+Requirements: JDK 17+, Android SDK (build-tools + platform), Python 3.9+, `adb`, and for the eyes `scrcpy` 2.5+ and `ffmpeg`. Full walkthrough: [docs/INSTALL.md](docs/INSTALL.md).
 
 ```bash
 export ANDROID_SDK=~/android-sdk PHONE_SERIAL=<your phone serial>
@@ -108,7 +113,7 @@ The phone may be connected over USB or wireless debugging (including through a V
 ```
 ./hid.py status                         # backend, registered, host, bonded devices, recent log
 ./hid.py discoverable [--duration 300]  # shows Allow/Deny on the phone; someone must tap Allow
-./hid.py connect AA:BB:CC:DD:EE:FF      # connect to an already-bonded computer
+./hid.py connect <target-bt-address>    # connect to an already-bonded computer
 ./hid.py type 'Hello, World!\n'         # US-ASCII; \n=Enter, \t=Tab; '-' = stdin; --delay ms (default 12)
 ./hid.py key win+r                      # combos: ctrl alt shift win/cmd/gui, ralt, rctrl ...
 ./hid.py key "ctrl+a ctrl+c" alt+tab    # space-separated sequence
