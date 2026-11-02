@@ -1,4 +1,6 @@
-# Phone Hands
+# Helpful Potato 🥔
+
+*Not affiliated with any squad, geek or otherwise.* An unrooted Android phone becomes an AI agent's hands (USB/Bluetooth keyboard + mouse) and eyes (camera) for any computer, with nothing installed on the target. Internally the app and CLI are still called "Phone Hands".
 
 **Give an AI agent hands and eyes on a real computer, using an Android phone.**
 
