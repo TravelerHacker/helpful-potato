@@ -14,8 +14,14 @@ $BT/d8 --min-api 31 --lib $JAR --output build/dex $(find build/classes -name '*.
 cp build/base.apk build/unsigned.apk
 python3 -c "import zipfile,glob,os; z=zipfile.ZipFile('build/unsigned.apk','a'); [z.write(f, os.path.basename(f)) for f in glob.glob('build/dex/classes*.dex')]; z.close()"
 $BT/zipalign -f 4 build/unsigned.apk build/aligned.apk
-# Signing keystore (never commit it). A throwaway debug key is generated if missing.
+# Signing keystore (NEVER commit it). Point at a stable release key via env so updates
+# install over the top without an uninstall; falls back to a throwaway debug key.
+#   KEYSTORE, KEYSTORE_PASS, KEY_ALIAS, KEY_PASS  (or source app/signing.env)
+[ -f signing.env ] && . ./signing.env
 KS=${KEYSTORE:-debug.keystore}
-[ -f $KS ] || keytool -genkeypair -keystore $KS -storepass android -keypass android -alias debug -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=PhoneHands" >/dev/null 2>&1
-$BT/apksigner sign --ks $KS --ks-pass pass:android --key-pass pass:android --out build/phone-hands-hid.apk build/aligned.apk
+KS_PASS=${KEYSTORE_PASS:-android}
+KS_ALIAS=${KEY_ALIAS:-debug}
+K_PASS=${KEY_PASS:-$KS_PASS}
+[ -f "$KS" ] || keytool -genkeypair -keystore "$KS" -storepass "$KS_PASS" -keypass "$K_PASS" -alias "$KS_ALIAS" -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=PhoneHands" >/dev/null 2>&1
+$BT/apksigner sign --ks "$KS" --ks-pass pass:"$KS_PASS" --key-pass pass:"$K_PASS" --ks-key-alias "$KS_ALIAS" --out build/phone-hands-hid.apk build/aligned.apk
 echo "built $(pwd)/build/phone-hands-hid.apk"

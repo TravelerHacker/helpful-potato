@@ -29,3 +29,5 @@ local.properties
 
 # Repository illustrations are part of the published docs
 !docs/img/*.jpg
+app/signing.env
+signing.env
