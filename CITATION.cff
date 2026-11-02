@@ -8,10 +8,12 @@ authors:
 repository-code: "https://github.com/TravelerHacker/helpful-potato"
 url: "https://github.com/TravelerHacker/helpful-potato"
 license: "PolyForm-Noncommercial-1.0.0"
-version: "1.0.0"
-date-released: "2026-11-01"
+version: "1.1.0"
+date-released: "2026-11-02"
 keywords:
   - AI agent
+  - vision-language model
+  - computer-use agent
   - computer use
   - Android
   - Bluetooth HID

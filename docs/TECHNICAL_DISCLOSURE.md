@@ -7,8 +7,8 @@
 | **Author** | TravelerHacker |
 | **First public disclosure** | 2026-11-01 |
 | **Location** | https://github.com/TravelerHacker/helpful-potato |
-| **Version of record** | Git tag `v1.0.0` of the above repository, with its commit history |
-| **Keywords** | AI agent, computer-use agent, LLM agent, robotic process automation, smartphone, Android, Bluetooth HID, BluetoothHidDevice, USB HID, keyboard emulation, mouse emulation, CH9329, UART-to-HID bridge, USB OTG, scrcpy, camera capture, screen observation, visual feedback loop, closed-loop control, KVM, out-of-band control, air-gapped computer, retired phone reuse |
+| **Version of record** | Git tag `v1.0.0` of the above repository, with its commit history; extended by tag `v1.1.0` (agent loop with interchangeable model providers, sections 7.10 and 9.5 to 9.9) |
+| **Keywords** | AI agent, computer-use agent, LLM agent, robotic process automation, smartphone, Android, Bluetooth HID, BluetoothHidDevice, USB HID, keyboard emulation, mouse emulation, CH9329, UART-to-HID bridge, USB OTG, scrcpy, camera capture, screen observation, visual feedback loop, closed-loop control, KVM, out-of-band control, air-gapped computer, retired phone reuse, vision-language model, provider-agnostic agent, local model, on-device model, tablet, laptop helper, AR/VR headset, passthrough camera, smart glasses, guided repair, BLE HID, HOGP, IP-KVM, PXE, 2.4 GHz receiver |
 
 ---
 
@@ -57,7 +57,9 @@
 | Ref. | Component | Implementation in the repository |
 |---|---|---|
 | 10 | Host computer running the agent | Any Linux/macOS machine with Python 3.9+, adb, scrcpy 2.5+, ffmpeg |
-| 12 | Agent | Any program, script, or AI model that invokes the host tools (not included; the tools are agent-agnostic) |
+| 12 | Agent | `agent.py` (observe-decide-act loop, section 7.10), or any other program, script, or AI model that invokes the host tools |
+| 13 | Model provider adapters ("brain") | `providers.py` (cloud and local vision-language model APIs) |
+| 15 | Host unit tests | `tests/` (agent and providers; network mocked) |
 | 14 | Input command tool ("hands") | `hid.py` |
 | 16 | Image capture tool ("eyes") | `look.py` |
 | 18 | Shared host helpers | `common.py` (device selection, adb invocation, port forward) |
@@ -180,7 +182,7 @@ It then extracts the last frame of the clip with ffmpeg (`-sseof -0.4`, falling 
 
 7.8.1. The phone shows a high-importance ongoing notification ("Camera ON - remote viewing"), a red full-width overlay banner below the status bar (window type `TYPE_APPLICATION_OVERLAY`, non-focusable, non-touchable; requires the `SYSTEM_ALERT_WINDOW` app-op), and a red label in the application whenever either (a) a client has called `/camera/on` and the most recent heartbeat is less than 15 s old, or (b) Android's `CameraManager.AvailabilityCallback` reports any camera as unavailable (in use), which covers sessions whose client crashed and use of the camera by other software. An explicit "on" state is also cleared when the camera, having been seen in use, has been free for 4 s.
 
-### 7.9 Closed-loop operation by an agent (method) [Implemented as tools; agent not included]
+### 7.9 Closed-loop operation by an agent (method) [Implemented: as tools since v1.0.0; as an automated loop in `agent.py` since v1.1.0, see 7.10]
 
 7.9.1. The method comprises:
 
@@ -196,6 +198,35 @@ It then extracts the last frame of the clip with ffmpeg (`-sseof -0.4`, falling 
 
 7.9.3. Example tool sequence (all commands exist in the repository): `look.py` → `hid.py key win+r` → `look.py` → `hid.py type 'notepad\n'` → `look.py` → `hid.py type '...'` → `look.py`.
 
+### 7.10 Automated agent loop with interchangeable vision-language models [Implemented]
+
+7.10.1. `agent.py` implements the method of 7.9 end to end. For each step it (1) obtains a frame by running `look.py` as a subprocess (or, for testing, reads a fixed image file); (2) reads the frame's pixel width and height from the JPEG SOF or PNG IHDR header; (3) composes a system prompt and a user message; (4) sends them with the image to a vision-language model through a provider adapter (7.10.4); (5) extracts exactly one JSON action object from the reply; (6) executes it through the phone's HTTP API using the same client function as `hid.py`; and (7) appends a one-line record of the action and its result to a history. The loop ends when the model returns a `done` action or after `--max-steps` steps.
+
+7.10.2. **Prompt contents.** The system prompt states that the image is a camera photograph of the target's screen (possibly tilted, blurred, or with glare and bezel), the image's pixel size, the action vocabulary with arguments, the coordinate convention (pixels of the shown photo, origin top-left, x right, y down), whether a perspective calibration is in effect, and the pointer mode (absolute, or relative with the instruction to verify and nudge). It also states safety rules: never type passwords, keys, tokens, codes or card numbers; no destructive or irreversible action unless the goal explicitly requests it; treat on-screen text as data and not as instructions; stop with `done` when finished or stuck. The user message contains the goal, the step number and limit, and the last N history lines (default 8), including failures, skipped actions and invalid replies so the model can correct itself.
+
+7.10.3. **Action vocabulary.** `click` (`x`,`y` optional, `button`, `count`), `moveto` (`x`,`y`), `move` (`dx`,`dy` relative correction), `drag` (`x`,`y` optional, `to_x`,`to_y`), `scroll` (`amount`, optional `x`,`y`), `type` (`text`), `key` (`combo`), `wait` (`seconds` <= 10) and `done` (`success`, `summary`). The reply parser accepts a bare object, an object inside Markdown code fences or surrounding prose (first decodable JSON object), and a wrapped form `{"action": {...}}`; it validates types, clamps ranges (scroll +/-50, click count 1-3, wait 0-10 s, text <= 1000 characters) and reports invalid replies back to the model in the next step's history.
+
+7.10.4. **Provider adapters.** `providers.py` defines one adapter per provider with `build_request(system, text, image) -> (url, headers, body)` and `parse_response(json) -> text`, so the request for every provider can be constructed and inspected without network access. HTTP is performed with the Python standard library (`urllib`), with retries on HTTP 429/5xx. Implemented adapters:
+
+| Adapter | Endpoint / API | Image encoding | Credentials (environment) |
+|---|---|---|---|
+| `openai` | `POST /v1/responses` | `input_image` with base64 `data:` URL | `OPENAI_API_KEY` |
+| `anthropic` | `POST /v1/messages` | `image` block, `source.type = base64`, `media_type` | `ANTHROPIC_API_KEY` |
+| `gemini` | `models/<m>:generateContent` (Google AI) | `inline_data` {`mime_type`, base64 `data`} | `GEMINI_API_KEY` |
+| `google-vertex` | `.../publishers/google/models/<m>:generateContent` | as Gemini | OAuth bearer token (env, google-auth, or gcloud) |
+| `xai`, `openrouter`, `mistral`, `ollama`, `openai-compatible` | `POST <base>/chat/completions` | `image_url` with base64 `data:` URL | provider key, or none for local servers |
+| `azure-openai` | `<endpoint>/openai/deployments/<d>/chat/completions?api-version=` | as chat completions | `api-key` header |
+| `aws-bedrock` | Bedrock Runtime `Converse` via boto3 (optional import) | `image` {`format`, `source.bytes`} raw bytes | standard AWS credential chain |
+
+The model is selected per provider by a default id, an environment variable `<PROVIDER>_MODEL`, or `--model`. Where the provider offers a JSON output mode it is requested (Responses `text.format = json_object`, chat `response_format = json_object`, Gemini `responseMimeType = application/json`); otherwise the tolerant parser of 7.10.3 is relied on. Adapters return only the visible text, skipping reasoning/thinking blocks.
+
+7.10.5. **Coordinate mapping.** Model coordinates are mapped to fractions of the target screen either proportionally (whole frame = screen) or, when four screen corners in the frame are supplied (`--corners`), by a 3x3 homography computed by solving the standard 8x8 linear system for the four correspondences (corners -> unit square) and applied with perspective division; results are clamped to 0..1. With an absolute-capable backend (detected from `/status` `activeBackend = ch9329`, or forced with `--pointer absolute`) the fraction is sent to `/moveto`. With a relative backend the pointer is homed by a relative move of -(2*max(W,H)+500) counts on both axes (driving it into the top-left corner), then moved by `(fx*W*g, fy*H*g)` counts, where W x H is the target resolution (`--screen-size`) and g the mouse gain (`--mouse-gain`, counts per pixel); the model then verifies the pointer in the next frame and issues `move` corrections. A drag in relative mode moves by the difference of the mapped end and start points while the button is held.
+
+7.10.6. **Supervision and safety.** `--dry-run` prints every API call that would be made and sends no input; `--confirm` asks a human before each action (execute, skip, or quit; skipped actions are reported to the model); `--max-steps` bounds the run; Ctrl+C sends `/release`. Before executing a `type` action, the text is refused if it contains the value of any provider credential environment variable or matches patterns of common API keys or PEM private keys. Configuration errors (missing key, missing base URL, missing phone or adb) are reported as messages with exit status 2 before any input is sent.
+
+7.10.7. **Tests.** `tests/` contains unit tests run with `python3 -m unittest discover -s tests -t .` that mock HTTP and boto3 and verify, for each adapter, the URL, headers, body structure, that the base64 image decodes to the original bytes, and that a representative provider response parses into an action; and verify action parsing, homography mapping, relative/absolute pointing, the secret filter, dry-run, confirmation, and the CLI's error paths. No live model was called to produce these results.
+
+
 ## 8. Embodiments
 
 The following embodiments are disclosed. Each may be combined with any other compatible embodiment and with any of the alternatives in section 9.
@@ -208,6 +239,9 @@ The following embodiments are disclosed. Each may be combined with any other com
 6. **[Implemented]** The method of section 7.9: repeatedly capturing an image of a target display by a phone camera, interpreting it by an agent, and causing the phone to emit HID input to the target according to the agent's decision, and verifying the result by a subsequent image.
 7. **[Implemented]** Use of a retired or secondary mobile phone, held on a stand, as the sole hardware (apart from optional cables) needed to give an agent keyboard, mouse and visual access to a computer on which no software is installed.
 8. **[Implemented]** The system wherein the host-to-phone debug channel runs over a wireless network or an IP tunnel (adb over TCP/IP), so that the agent may be located remotely from both the phone and the target.
+9. **[Implemented]** The method of embodiment 6 wherein the interpreting and deciding are performed by a vision-language model selected at run time from a plurality of interchangeable cloud or local providers through adapters that each convert one camera image, a goal, and an action history into that provider's request format and convert its reply into a single structured action (section 7.10).
+10. **[Implemented]** The method of embodiment 9 wherein the model returns pointer targets as pixel coordinates in the camera image, which are converted to target-screen positions by proportional scaling or by a homography from calibrated screen corners, and executed either as absolute positioning or as homing followed by a relative move and image-verified correction.
+11. **[Implemented]** The method of embodiment 9 with a dry-run mode in which actions are displayed but not emitted, a per-action human confirmation mode, a step limit, and a filter that refuses to type text matching configured credentials or credential patterns.
 
 ## 9. Alternative Embodiments [Alternative]
 
@@ -267,6 +301,61 @@ The following variations are expressly disclosed. They are not implemented in th
 
 9.4.6. **Other phone platforms and form factors.** Any mobile operating system, tablet, single-board computer with a camera and Bluetooth/USB (e.g. Raspberry Pi-class devices), or wearable that offers equivalent HID-emulation and camera capabilities.
 
+### 9.5 Interchangeable "brains" (models and where they run)
+
+9.5.1. **Provider-agnostic brain.** The adapter interface of 7.10.4 (image + goal + history in, one structured action out) is independent of the model vendor. Any multimodal model reachable by an HTTP API, SDK, or local library may be substituted, including models from additional cloud providers, enterprise gateways and reverse proxies (which receive the same OpenAI-compatible or provider-native request at a different base URL), and model routers that select a different model per step (for example a small fast model for routine steps and a larger model after a failed verification). The same interface accepts non-LLM deciders (OCR plus rules, UI-element detectors, template matching) that emit the same action JSON.
+
+9.5.2. **Local vs. cloud brain.** The model may run (a) in a public cloud service; (b) on a private or self-hosted server (vLLM, llama.cpp `llama-server`, Ollama, LM Studio, LocalAI) on the host or on the local network, implemented today through the `openai-compatible`/`ollama` adapters, so that images of the target's screen never leave the premises; or (c) on-device on the helper itself (the phone, tablet, laptop, headset or glasses) using a quantized on-device vision-language model (for example through an on-device runtime such as llama.cpp, MLC, MediaPipe LLM Inference, Core ML, NNAPI, or a vendor NPU SDK), so that the system operates with no network at all. The same action vocabulary and loop apply; only the adapter's transport changes.
+
+### 9.6 Other helper device form factors [Alternative, enabling]
+
+Any device that can (i) observe the target's screen ("eyes"), (ii) emit keyboard/mouse input to the target ("hands"), and (iii) reach a brain, can replace the phone. In each case below, eyes, hands and brain can be combined with any transport of 9.7 and any HID role of 9.1. Each form factor also supports the human-supervised **guided-repair mode** of 9.8.
+
+9.6.1. **Android tablets.** Identical to the phone embodiment: the same application and `BluetoothHidDevice` registration provide the hands, the rear camera provides the eyes, and adb (USB or wireless) is the control channel. A tablet's larger battery and, often, a USB-C port that supports simultaneous charging and OTG make it well suited to long unattended sessions; a kickstand or case substitutes for the stand. For the CH9329/USB paths the tablet behaves exactly as the phone.
+
+9.6.2. **iPad / iPhone as eyes (and bridged hands).** iOS/iPadOS does not permit an app to take the Bluetooth HID Device role or expose an adb-style debug channel, so an Apple device is used for the eyes while the hands come from a bridge. Eyes: the iPad/iPhone camera is exposed to the host as a webcam (Continuity Camera to a Mac host, or a third-party UVC/webcam app, or an RTSP/WebRTC stream from an app), and the host captures still frames from that webcam/stream instead of from `look.py`. Hands: a USB/BLE/Wi-Fi-to-USB-HID bridge (9.1.4, for example an ESP32-S3) plugged into the target receives actions from the host or from the Apple device over BLE/Wi-Fi. Brain: on the host or in the cloud. The agent loop is unchanged except that the frame source is the webcam/stream and the action sink is the bridge's control endpoint.
+
+9.6.3. **A laptop or another computer as the helper.** A second computer (laptop, mini-PC, or single-board computer) with a webcam acts as the helper to operate or recover a target computer on which no software may run, including pre-boot states (BIOS/UEFI setup, boot menu, bootloader, full-disk-encryption prompt) and operating-system installation. Eyes: the helper's built-in or USB webcam, or an HDMI/DisplayPort capture dongle reading the target's video output, read by the host-side capture code in place of `look.py`. Hands, by platform:
+
+- **Linux helper:** the BlueZ stack can expose the helper itself as a Bluetooth HID keyboard/mouse by registering an HID profile/SDP record over D-Bus and serving the interrupt/control PSMs (an emulated-keyboard approach), pairing with the target as an ordinary Bluetooth keyboard+mouse; or the helper drives a USB HID gadget (9.1.1, Linux ConfigFS `hid` function on a board with USB device-mode such as a Pi Zero/4/5) or a CH9329/ESP32 bridge over USB-serial.
+- **Windows/macOS helper:** these platforms do not expose a general Bluetooth Classic HID Device role to applications, so the helper presents a **BLE HID peripheral** (HOGP, 9.1.3) through the OS BLE peripheral/GATT APIs where available, or, more portably, drives an attached CH9329/ESP32 USB-HID bridge over USB-serial. The bridge approach also works in pre-boot states because the target sees a plain USB keyboard/mouse.
+
+Brain: on the helper itself (9.5.2(c)) or remote (9.7.3). This yields a self-contained "repair laptop" that watches the target's screen through a webcam and types/clicks as a USB or Bluetooth keyboard, assisting firmware configuration, boot selection, OS installation and recovery.
+
+9.6.4. **AR/VR headsets (e.g. Quest-class).** The headset's passthrough/world-facing cameras provide the eyes: a frame of the target's screen is captured through the passthrough camera API (where the platform grants camera access) or by a camera-access companion, and undistorted/cropped to the screen region. Hands: on Android-based XR, the same `BluetoothHidDevice` role emits keyboard/mouse to the target where the platform exposes it; otherwise a bridge (9.1.4) or a paired phone provides the hands. Brain: on the headset, a paired phone/PC, or the cloud. Because the headset already renders a display to the wearer, it is especially suited to the guided-repair mode of 9.8: the AI's suggested next action is drawn as an overlay anchored to the real screen (a highlight on the button to click, the keystrokes to press), and the wearer confirms with a controller button, hand gesture, or voice before anything is emitted, or performs the step manually.
+
+9.6.5. **Smart glasses (camera glasses).** Camera glasses provide the eyes (a still captured from the glasses' camera). Hands come from the glasses' paired phone emitting Bluetooth HID (9.6.1), or from the glasses themselves where they run an Android-based OS exposing `BluetoothHidDevice`, or from a bridge (9.1.4) where the glasses platform is closed. Brain: on the phone or cloud. A heads-up display (where present) or audio channel presents the planned action, and the wearer gives **voice confirmation** ("do it" / "skip") before emission; with no HID role available the glasses operate eyes-only in guided-repair mode (9.8), speaking or displaying the steps for a human to perform. This supports hands-busy field repair and accessibility use.
+
+### 9.7 Transports between helper, bridge, brain and target [Alternative, enabling]
+
+9.7.1. **Hands transport — Bluetooth HID as primary.** The primary hands transport across all form factors of 9.6 is Bluetooth HID, used wherever the helper's OS exposes a HID Device role: Android phones/tablets and Android-based XR/glasses via `android.bluetooth.BluetoothHidDevice` (the implemented mechanism); a Linux helper via the BlueZ HID profile/SDP registration; Windows/macOS helpers and many XR/glasses platforms via a BLE HID peripheral (HOGP). **Classic Bluetooth HID vs. BLE HID (HOGP):** Classic HID (HID Device profile over L2CAP control/interrupt channels, the implemented path) is widely accepted by desktop operating systems as a keyboard/mouse and is what the Android API provides; BLE HID over GATT (HID Service 0x1812 with Report Map/Report/Protocol-Mode characteristics plus Battery and Device Information services, 9.1.3) is lower-power, is the role most readily exposed to applications on Windows/macOS/iOS and many XR/glasses platforms, and reaches targets that accept BLE keyboards. A dual-mode helper may offer both and let the target select. Where the helper OS blocks any HID Device role (iOS/iPadOS, most closed smart-glasses platforms), the hands are provided instead by a BLE/Wi-Fi/USB-serial-to-USB-HID bridge (9.1.4, e.g. ESP32-S3) plugged into the target, or the device is used eyes-only (9.6.2, 9.6.5).
+
+9.7.2. **Helper-to-bridge transport.** When a bridge chip/board provides the hands, the helper may reach it over any of: USB-serial/USB-CDC over an OTG cable; UART through a USB-serial adapter; Bluetooth Classic SPP or BLE GATT; Wi-Fi (TCP/UDP/HTTP/WebSocket/MQTT); or **wired Ethernet / IP** to a network-attached HID bridge. The command payload may reuse the CH9329 frame format (allowing reuse of the existing encoder), raw HID reports, or a textual protocol.
+
+9.7.3. **Wired Ethernet and network transports (especially for laptop/computer helpers).**
+
+- **(a) Network-attached HID bridge as hands.** A small networked board (ESP32 with Ethernet or Wi-Fi, Raspberry Pi Pico W / RP2040-W, Raspberry Pi Zero/4/5 with Ethernet, or similar) is plugged by USB into the target and presents a USB HID keyboard/mouse to it (native USB device support or via a CH9329), while receiving action commands from the helper/brain over LAN (TCP/UDP/HTTP/WebSocket/MQTT/gRPC). A full **IP-KVM** of the PiKVM class is a combined embodiment that provides both hands (USB HID gadget to the target) and eyes (HDMI capture of the target's output) over the network; the agent uses its captured frames as the eyes and its input endpoint as the hands, driving firmware setup, boot and OS install remotely with no software on the target.
+- **(b) Helper reaching the bridge over wired links instead of Bluetooth.** The helper (phone/tablet/laptop) connects to the HID bridge over Ethernet via a USB-C-to-Ethernet adapter, over a USB-Ethernet/USB-tethering link, or over a direct USB-serial/USB-CDC cable, rather than over Bluetooth, giving a fully wired hands path (useful in RF-noisy or RF-restricted environments and for pre-boot reliability).
+- **(c) Remote/cloud brain over LAN/VPN.** The deciding model runs on a remote or cloud machine and reaches the helper over the LAN, a VPN, or a mesh/overlay VPN (e.g. WireGuard-based mesh), with the helper itself on wired Ethernet via a USB-C adapter for a stable link; the control channel (adb over TCP/IP in the implemented tooling, or any transport of 9.1.9) and the frame upload traverse the tunnel, so the brain, the helper and the target may be in three different locations.
+- **(d) Network-boot (PXE) recovery assisted by the agent.** For bare-metal recovery or provisioning, the agent operates the target's firmware over the hands/eyes path to enable network boot and select the PXE/HTTP-boot entry, while a PXE/TFTP/HTTP boot server (optionally on the helper or reachable over the same LAN/VPN) serves the recovery or installer image; the agent then drives the booted recovery/installer UI through the same loop. This combines out-of-band input/vision with in-band network boot without installing anything on the target's existing OS.
+
+9.7.4. **Proprietary 2.4 GHz wireless receivers (owner-authorized use only).** As a hands transport for a keyboard/mouse that the owner already uses with the target:
+
+- **(a) Helper-side radio paired on the owner's authority.** A radio module on the helper side (an nRF24L01+ / nRF52840-class board attached to the phone/laptop over USB-serial, BLE, or Wi-Fi) is legitimately paired with — or configured with the owner-supplied pairing/keys of an owner-provided matching keyboard for — a vendor USB receiver dongle (e.g. nRF24/nRF52-based, Unifying/Bolt-class) already plugged into the target, and emits keystroke and mouse-movement reports to the target over that 2.4 GHz link exactly as the matching keyboard/mouse would.
+- **(b) Helper supplies its own dongle.** The helper supplies its own USB receiver dongle that plugs into the target and receives commands from the helper over a proprietary 2.4 GHz link or BLE; the target sees an ordinary USB HID keyboard/mouse, so this works in pre-boot states, with no pairing step for the operator.
+- **(c) Dual-mode keyboards.** A keyboard that supports both Bluetooth and a 2.4 GHz dongle can serve as either transport; the helper selects whichever the target accepts.
+
+These 2.4 GHz embodiments are disclosed for operating equipment the operator owns or is authorized to operate, using devices and pairings the owner provides; this document does not describe and does not enable interception of, or unauthorized injection into, third parties' wireless input devices.
+
+### 9.8 Human-supervised guided-repair mode [Alternative; partially implemented]
+
+9.8.1. In guided-repair mode the brain runs the same observe-decide loop but, instead of emitting input, presents the proposed next action to a human for them to perform or approve. The per-action confirmation (`--confirm`) and dry-run (`--dry-run`) modes of 7.10.6 are the implemented, non-overlay form of this (the action is shown and the human approves, skips, or quits). Disclosed extensions: rendering the proposed action as an on-screen or in-view overlay — a highlight or arrow on the UI element to click and the exact keystrokes to press — anchored to the detected screen region in an AR/VR headset's or smart glasses' display (9.6.4, 9.6.5), or on a separate helper screen; confirmation by controller button, hand gesture, or voice ("do it"/"skip"); and an eyes-only variant in which the system never emits input at all and only guides a human through a repair step by step, suitable for devices with no available HID role and for training/accessibility.
+
+### 9.9 Note on form-factor equivalence
+
+9.9.1. Throughout sections 9.5 to 9.8, the roles of eyes (camera or capture), hands (a HID transport of 9.1 / 9.7), brain (a decider of 9.5), and control/transport (9.1.9, 9.7) are independent and freely combinable. Any device offering at least one of these roles can participate (for example, one device as eyes and another as hands), and any subset of roles can be placed locally or remotely, on-device or in the cloud, subject only to the authorization constraints stated above.
+
+
 ## 10. Implementation Status and Limitations (as of 2026-11-01)
 
 - Bluetooth HID backend, HTTP API, host CLIs, camera capture, and camera indicator: implemented and used on one Google Pixel phone.
@@ -275,7 +364,8 @@ The following variations are expressly disclosed. They are not implemented in th
 - Bluetooth backend: relative pointer only.
 - Image capture: approximately 6 seconds per still frame in the implemented scrcpy-based method.
 - The API has no authentication; it is reachable only through the phone's loopback interface (via adb forward).
-- Everything in section 9 is disclosed but not implemented.
+- The agent loop `agent.py` with interchangeable providers (section 7.10) and its host-side unit tests are implemented and the tests pass; no live model request was made in testing.
+- Everything in section 9 is disclosed as an alternative embodiment and is not implemented in the published code except where a sub-section states otherwise (the dry-run and per-action confirmation forms of the guided-repair mode of 9.8, and the local/`openai-compatible`/`ollama` brains of 9.5.2, are implemented).
 
 ## 11. Reproduction
 
@@ -285,5 +375,6 @@ Build and installation steps are in [`docs/INSTALL.md`](INSTALL.md). The applica
 
 - Repository: https://github.com/TravelerHacker/helpful-potato
 - First public disclosure: 2026-11-01 (Git commit history and release `v1.0.0`)
+- Agent loop and provider-agnostic embodiments added: release `v1.1.0` (Git commit history)
 - Author: TravelerHacker
 - Citation metadata: [`CITATION.cff`](../CITATION.cff)

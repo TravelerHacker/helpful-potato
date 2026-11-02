@@ -19,6 +19,7 @@ This guide covers building, installing, and operating Helpful Potato (internal n
 13. [Example observe/act session](#13-example-observeact-session)
 14. [Troubleshooting](#14-troubleshooting)
 15. [Security](#15-security)
+16. [The agent loop (agent.py) and AI providers](#16-the-agent-loop-agentpy-and-ai-providers)
 
 ## 1. Overview
 
@@ -39,7 +40,7 @@ The host and the target can be the same physical computer, but normally they are
 | Item | Notes |
 |---|---|
 | Linux or macOS | `look.py` uses `fcntl` file locking, which is not available on native Windows Python. On Windows use WSL. |
-| Python 3.9 or newer | Standard library only; no pip packages are needed. |
+| Python 3.9 or newer | Standard library only; no pip packages are needed. Optional: `boto3` for the `aws-bedrock` brain, `google-auth` for `google-vertex` (section 16). |
 | `adb` (Android platform-tools) | On `PATH`, or set `ADB=/path/to/adb`. |
 | `scrcpy` 2.5 or newer | Needed for `look.py` camera capture. It must support `--video-source=camera` and `--no-window`. On `PATH`, or set `SCRCPY=/path/to/scrcpy`. |
 | `ffmpeg` | On `PATH`. Used by `look.py` to extract a still frame. |
@@ -419,7 +420,7 @@ export PHONE_SERIAL=<serial>
 ./look.py -o /tmp/s3.jpg --rotate cw     # verify the result
 ```
 
-An AI agent runs the same commands as tools: it reads each image (for example with a vision-capable model), decides the next keyboard or mouse action, and issues it with `hid.py`.
+An AI agent runs the same commands as tools: it reads each image (for example with a vision-capable model), decides the next keyboard or mouse action, and issues it with `hid.py`. `agent.py` (section 16) automates exactly this loop with a model provider of your choice.
 
 ## 14. Troubleshooting
 
@@ -457,3 +458,118 @@ The app's own status screen and `./hid.py status` (`log` field) show the most re
 - The camera sees whatever is in front of it. Point it only at the target screen and tell people nearby. Captured frames stay on the host under `frames/` (git-ignored); review them before sharing.
 - `./hid.py status` output includes Bluetooth names and addresses of bonded devices. Treat it as private.
 - Unpair the phone from target computers when you are finished.
+
+## 16. The agent loop (agent.py) and AI providers
+
+`agent.py` automates section 13. Each step it:
+
+1. captures a frame with `look.py` (same options: `--rotate`, `--camera-id`, `--look-size`);
+2. sends the frame, the goal, and the last `--history` actions with their results to a vision-language model;
+3. parses exactly one JSON action from the reply;
+4. executes it through the same HTTP API `hid.py` uses (or only prints it with `--dry-run`);
+5. repeats until the model returns `done` or `--max-steps` (default 20) is reached.
+
+### 16.1 Quick start
+
+```bash
+export PHONE_SERIAL=<serial>
+export OPENAI_API_KEY=<your key>          # or the variable(s) for your provider, see 16.3
+./agent.py --list-providers               # providers and default models
+./agent.py --provider openai --dry-run --max-steps 3 "Open the Start menu"   # no input is sent
+./agent.py --provider openai --confirm "Open Notepad and type hello"          # y / n (skip) / q (quit) per step
+./agent.py --provider openai "Open Notepad and type hello"                    # unattended (supervise it)
+```
+
+Try the brain without a phone: `./agent.py --provider openai --image screenshot.jpg --dry-run "What would you click to open settings?"`. The same image is used every step and nothing is sent to any computer. (This still makes real, billable model requests.)
+
+Exit codes: 0 = model reported success, 1 = gave up / max steps / stopped by user, 2 = configuration, phone or provider error (the message says which).
+
+### 16.2 Options
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--provider NAME` | `$POTATO_PROVIDER` or `openai` | which brain (16.3) |
+| `--model ID` | per provider, or `<PROVIDER>_MODEL` env var | model id; for Azure the deployment name |
+| `--base-url URL` | provider default | API base URL; required for `openai-compatible` |
+| `--max-tokens N` / `--timeout S` | 4096 / 120 | per request |
+| `--max-steps N` | 20 | hard stop |
+| `--history N` | 8 | recent actions included in each request |
+| `--dry-run` | off | print actions instead of sending keyboard/mouse input |
+| `--confirm` | off | ask before every action |
+| `--settle S` | 0.5 | pause after each action before the next frame |
+| `--log FILE` | none | append each step (action, result, raw reply) as JSON lines |
+| `--image FILE` | camera | use a fixed image instead of `look.py` (testing) |
+| `--save-frames DIR` | off | keep each step's frame (frames are otherwise deleted) |
+| `--pointer auto\|absolute\|relative` | `auto` | `auto` asks `/status`: CH9329 → absolute, Bluetooth → relative |
+| `--corners tlx,tly,trx,try,brx,bry,blx,bly` | whole frame | where the target screen's corners are in the frame (pixels) |
+| `--screen-size WxH` | `1920x1080` | target resolution, used for relative moves |
+| `--mouse-gain G` | 1.0 | relative mode: mouse counts per screen pixel |
+
+### 16.3 Providers
+
+All keys are read from environment variables; nothing is stored in the repository. Put them in your shell profile or a secrets manager, not in a committed file (`.env` is git-ignored). Each request contains one camera frame, so expect vision-input pricing for every step.
+
+| Provider | Required configuration | Notes |
+|---|---|---|
+| `openai` | `OPENAI_API_KEY` | Responses API `POST https://api.openai.com/v1/responses`, image as a base64 data URL, JSON output mode. `OPENAI_BASE_URL` overrides the endpoint (e.g. a proxy). |
+| `anthropic` | `ANTHROPIC_API_KEY` | Messages API `POST https://api.anthropic.com/v1/messages`, `anthropic-version: 2023-06-01`, base64 image block. |
+| `gemini` | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) from Google AI Studio | `generateContent` on `generativelanguage.googleapis.com/v1beta`, key in the `x-goog-api-key` header, `responseMimeType: application/json`. |
+| `xai` | `XAI_API_KEY` | `POST https://api.x.ai/v1/chat/completions` (OpenAI-compatible). |
+| `azure-openai` | `AZURE_OPENAI_ENDPOINT` (e.g. `https://<resource>.openai.azure.com`), `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_DEPLOYMENT` | `.../openai/deployments/<deployment>/chat/completions?api-version=...`; `AZURE_OPENAI_API_VERSION` defaults to `2024-10-21`. Deploy a vision-capable model first. |
+| `aws-bedrock` | `pip install boto3`; AWS credentials by any standard method (`aws configure`, `AWS_PROFILE`, SSO, instance role, or `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`); `AWS_REGION` (default `us-east-1`) | Converse API with raw image bytes. Enable model access in the Bedrock console. Some models require a cross-region inference profile id (for example a `us.` or `global.` prefix); pass it with `--model`. IAM permission needed: `bedrock:InvokeModel`. |
+| `google-vertex` | `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION` (default `global`), and a token: `GOOGLE_VERTEX_ACCESS_TOKEN`, or `pip install google-auth` with Application Default Credentials (`gcloud auth application-default login`), or a logged-in `gcloud` CLI | Gemini `generateContent` on `aiplatform.googleapis.com`. Enable the Vertex AI API on the project. |
+| `openrouter` | `OPENROUTER_API_KEY` | `https://openrouter.ai/api/v1/chat/completions`; any vision model slug via `--model`, e.g. `anthropic/claude-sonnet-5.5`. |
+| `mistral` | `MISTRAL_API_KEY` | `https://api.mistral.ai/v1/chat/completions`; use a vision-capable model. |
+| `ollama` | Ollama running locally; `ollama pull qwen3-vl` | Defaults to `http://localhost:11434/v1`; `OLLAMA_BASE_URL` or `--base-url` for another host. No key. |
+| `openai-compatible` | `--base-url` (or `OPENAI_COMPATIBLE_BASE_URL`); optional `OPENAI_COMPATIBLE_API_KEY` | Any `/v1/chat/completions` server with image input: llama.cpp `llama-server` (with a multimodal projector, `--mmproj`), vLLM (`vllm serve <vision model>`), LM Studio (`http://localhost:1234/v1`), LocalAI. |
+
+Default model ids (see `./agent.py --list-providers`) were current vision-capable models when this release was made; providers rename and retire models often, so override with `--model` or `<PROVIDER>_MODEL` (`OPENAI_MODEL`, `ANTHROPIC_MODEL`, `GEMINI_MODEL`, `XAI_MODEL`, `AWS_BEDROCK_MODEL`, `GOOGLE_VERTEX_MODEL`, `OPENROUTER_MODEL`, `MISTRAL_MODEL`, `OLLAMA_MODEL`, `OPENAI_COMPATIBLE_MODEL`). Small local models follow the JSON format less reliably; invalid replies are reported back to the model and retried on the next step.
+
+### 16.4 Action format
+
+The model must reply with one JSON object; `x`/`y` are pixel coordinates in the frame it was shown.
+
+```json
+{"reason": "open the Run dialog", "type": "key", "combo": "win+r"}
+```
+
+| `type` | Arguments | Executed as |
+|---|---|---|
+| `click` | `x`,`y` (optional), `button`, `count` | point (below), then `/click` |
+| `moveto` | `x`,`y` | point |
+| `move` | `dx`,`dy` (target pixels) | `/move` (small corrections) |
+| `drag` | `x`,`y` (optional), `to_x`,`to_y` | point, `/down`, move, `/up` |
+| `scroll` | `amount`, optional `x`,`y` | point, `/scroll` |
+| `type` | `text` | `/type` (refused if it looks like a credential) |
+| `key` | `combo` | `/key` |
+| `wait` | `seconds` (≤ 10) | sleep |
+| `done` | `success`, `summary` | stop |
+
+### 16.5 Pointing and calibration
+
+"Point" converts frame pixels to a fraction of the target screen. Without `--corners` the whole frame is treated as the screen, which is only approximate. For better accuracy:
+
+1. `./look.py -o /tmp/cal.jpg --rotate <same as you use>` and open it in an image viewer.
+2. Note the pixel coordinates of the target screen's top-left, top-right, bottom-right and bottom-left corners.
+3. Pass them: `--corners 212,96,1710,120,1690,968,230,940`. A perspective transform (homography) then maps any point in the frame to the screen.
+
+Then:
+
+- **CH9329 (absolute):** the fraction is sent to `/moveto`. Accuracy depends only on calibration.
+- **Bluetooth (relative):** the pointer is first pushed far toward the top-left corner (homing), then moved by `fraction × --screen-size × --mouse-gain` counts. Pointer acceleration makes this approximate; the model is told to look for the pointer in the next frame and correct with `move`. For predictable results disable pointer acceleration on the target (Windows: *Enhance pointer precision* off; macOS/Linux: flat acceleration profile) and tune `--mouse-gain`: run `./hid.py move -4000 -4000` then `./hid.py move 500 0`, measure how many screen pixels the pointer moved, and use `gain = 500 / pixels_moved`.
+
+### 16.6 Safety
+
+- Start every new task with `--dry-run`, then `--confirm`. Keep `--max-steps` small.
+- The system prompt forbids typing secrets, destructive or irreversible actions not explicitly requested, and following instructions that appear on screen. `agent.py` additionally refuses to type any text containing the value of a provider key variable or a string shaped like a common API key/private key.
+- If a login is needed, the model is told to stop with `done` and `success: false`; type credentials yourself.
+- Frames of your screen are sent to the selected provider. For sensitive screens use a local model (`ollama`, `openai-compatible`).
+- Press Ctrl+C to stop; `agent.py` sends `/release` so no key or button stays held.
+
+### 16.7 Tests
+
+```bash
+python3 -m unittest discover -s tests -t .     # no network, no phone, no API keys needed
+```
+
+The tests mock all HTTP (and boto3) and check, for every provider, the request URL, headers, body shape and image encoding, and that a sample response is parsed into an action; plus action parsing, coordinate mapping, dry-run and confirmation paths.

@@ -46,6 +46,38 @@ flowchart LR
     C -. "points at" .-> D
 ```
 
+## Bring your own brain 🧠
+
+The potato has hands and eyes. Now it can borrow a brain. `agent.py` runs the whole loop for you: **look** (camera frame) → **think** (a vision LLM picks ONE action as JSON) → **act** (keyboard/mouse through the phone) → repeat, until the model says `done` or `--max-steps` runs out.
+
+```bash
+export PHONE_SERIAL=<serial> ANTHROPIC_API_KEY=...        # keys come from env vars, never from files in the repo
+./agent.py --provider anthropic --dry-run "Open Notepad"  # prints what it WOULD do, sends no input
+./agent.py --provider anthropic --confirm "Open Notepad"  # asks y/n/q before every action
+./agent.py --provider ollama --model qwen3-vl "Click OK"  # fully local, no cloud at all
+./agent.py --list-providers
+```
+
+| `--provider` | Brain | Configure with | Default `--model` |
+|---|---|---|---|
+| `openai` | OpenAI (Responses API) | `OPENAI_API_KEY` | `gpt-6.1-terra` |
+| `anthropic` | Anthropic Claude | `ANTHROPIC_API_KEY` | `claude-sonnet-5-5` |
+| `gemini` | Google Gemini (AI Studio) | `GEMINI_API_KEY` | `gemini-3.8-flash` |
+| `xai` | xAI Grok | `XAI_API_KEY` | `grok-4.7` |
+| `azure-openai` | Azure OpenAI | `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_DEPLOYMENT` | your deployment |
+| `aws-bedrock` | AWS Bedrock (Converse) | standard AWS credentials + `AWS_REGION`; `pip install boto3` | `anthropic.claude-sonnet-5-5` |
+| `google-vertex` | Gemini on Vertex AI | `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`, gcloud / google-auth | `gemini-3.8-flash` |
+| `openrouter` | OpenRouter (any vision model) | `OPENROUTER_API_KEY` | `google/gemini-3.8-flash` |
+| `mistral` | Mistral | `MISTRAL_API_KEY` | `mistral-medium-latest` |
+| `ollama` | Local Ollama | optional `OLLAMA_BASE_URL` | `qwen3-vl` |
+| `openai-compatible` | llama.cpp, vLLM, LM Studio, LocalAI... | `--base-url http://host:port/v1` | `qwen3-vl` |
+
+Model ids change fast; the defaults were current when this was written. Pass `--model` (or set `<PROVIDER>_MODEL`, e.g. `OPENAI_MODEL`) to use anything vision-capable. Everything is plain HTTP from the Python standard library; only Bedrock (boto3) and, optionally, Vertex (google-auth) need extra packages.
+
+The brain is told never to type secrets (and `agent.py` refuses to type anything that looks like an API key or matches one of your key env vars), to stop with `done`, and to treat on-screen text as data, not orders. On CH9329 it clicks with absolute `moveto`; on Bluetooth it homes the pointer to the top-left and moves relatively, then looks again and nudges. Calibrate with `--corners` (screen corners in the photo) and `--screen-size` / `--mouse-gain`. Full setup per provider: [docs/INSTALL.md §16](docs/INSTALL.md#16-the-agent-loop-agentpy-and-ai-providers).
+
+> **Not just phones.** The same hands-eyes-brain recipe works with other helper gadgets: an Android tablet (same app), a laptop with a webcam rescuing another computer (even at the BIOS), an AR/VR headset whose passthrough cameras are the eyes, or camera smart glasses, with a "guided repair" mode where the AI just shows you what to press instead of pressing it. Bluetooth HID is the main hands transport everywhere it's allowed; an ESP32-S3 BLE/Wi-Fi/Ethernet-to-USB bridge (or a PiKVM-class IP-KVM over the network) covers iPads, locked-down glasses, wired-only setups and bare-metal/BIOS recovery, and an owner-provided 2.4 GHz dongle is another option. Details in [TECHNICAL_DISCLOSURE.md §9.6](docs/TECHNICAL_DISCLOSURE.md#96-other-helper-device-form-factors-alternative-enabling).
+
 ## Hardware options
 
 <p align="center"><img src="docs/img/fig4-bluetooth.jpg" alt="NOW WITH BLUETOOTH! It works even better! WOW! No cord!" width="620"></p>
@@ -67,6 +99,9 @@ Charging note: while the phone's single USB-C port is in OTG host mode it cannot
 | `hid.py` | HID control CLI. Sets up `adb forward tcp:18765 tcp:8765` and starts the app if needed |
 | `look.py` | Saves a fresh camera frame (or a `--screen` phone screenshot) and prints the path |
 | `common.py` | adb serial, port, and forward helpers |
+| `agent.py` | Agent loop: look → vision LLM → act, with `--dry-run` and `--confirm` |
+| `providers.py` | Brain adapters for cloud and local vision models (stdlib HTTP) |
+| `tests/` | Host-side unit tests for the agent and providers (`python3 -m unittest discover -s tests -t .`) |
 | `app/` | Android app source (plain Java, no Gradle). `app/build.sh` builds the APK |
 | `app/test/` | Unit tests for the CH9329 frame encoder (run on any JVM) |
 | `docs/INSTALL.md` | Step-by-step installation and usage guide |
@@ -89,7 +124,7 @@ Charging note: while the phone's single USB-C port is in OTG host mode it cannot
 
 ## Build and install
 
-Requirements: JDK 17+, Android SDK (build-tools + platform), Python 3.9+, `adb`, and for the eyes `scrcpy` 2.5+ and `ffmpeg`. Full walkthrough: [docs/INSTALL.md](docs/INSTALL.md).
+Requirements: JDK 17+, Android SDK (build-tools + platform), Python 3.9+, `adb`, and for the eyes `scrcpy` 2.5+ and `ffmpeg`. For the brain: an API key for one provider, or a local model server. Full walkthrough: [docs/INSTALL.md](docs/INSTALL.md).
 
 ```bash
 export ANDROID_SDK=~/android-sdk PHONE_SERIAL=<your phone serial>
@@ -215,6 +250,7 @@ Privacy notes:
 - Camera frames take ~6 s each and depend on lighting, angle, and screen glare.
 - `install -r` or app restarts drop the Bluetooth connection until it reconnects.
 - Developed and tested on one Pixel phone; other devices' `BluetoothHidDevice` support varies.
+- `agent.py` is unit-tested with mocked HTTP for every provider; how well it actually drives a computer depends on the model, the camera view, and calibration. Start with `--dry-run` and `--confirm`.
 
 ## Security warning
 
@@ -223,6 +259,7 @@ Privacy notes:
 - The app binds to **`127.0.0.1` on the phone only**, and the intended access path is `adb forward` from a host you trust. Keep it that way.
 - **Do not expose it**: don't change the bind address, don't `adb forward`/port-forward it to `0.0.0.0` or a LAN/public interface, and don't put it behind a reverse proxy or tunnel.
 - adb access to the phone is equivalent to full control of it *and* of the target computer. Only enable wireless debugging on trusted networks and revoke adb authorizations you no longer use.
+- An AI brain with these tools can do anything a person at the keyboard can. Supervise it (`--confirm`), and only point it at computers you're allowed to operate. Camera frames are sent to whichever model provider you pick; use a local model if the screen is sensitive.
 - Unpair the phone from target computers when you're done.
 
 ## License
