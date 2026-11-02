@@ -46,6 +46,10 @@ flowchart LR
 
 ## Hardware options
 
+<p align="center"><img src="docs/img/fig4-bluetooth.jpg" alt="NOW WITH BLUETOOTH! It works even better! WOW! No cord!" width="620"></p>
+
+**NOW WITH BLUETOOTH!** It works even better. WOW, no cord! Pair the phone once and it shows up on the computer as an ordinary wireless keyboard and mouse.
+
 | Option | Status | What you need |
 |---|---|---|
 | **Bluetooth HID** | Works | An Android 9+ phone with `BluetoothHidDevice` support. Pair it with the target like a Bluetooth keyboard. |
