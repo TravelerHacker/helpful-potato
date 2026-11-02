@@ -1,0 +1,28 @@
+# Build outputs
+app/build/
+build/
+*.apk
+*.dex
+*.class
+# Signing material
+*.keystore
+*.jks
+*.p12
+*.pem
+keystore.properties
+# Captured frames / photos (may show private rooms or screens)
+frames/
+*.jpg
+*.jpeg
+*.png
+*.mp4
+# Python / misc
+__pycache__/
+*.pyc
+*.log
+*.bak
+*~
+.env
+.DS_Store
+.idea/
+local.properties
