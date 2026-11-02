@@ -24,7 +24,12 @@ import java.util.Set;
 
 /**
  * "Camera is on" indicator: high-importance notification + red overlay banner.
- * Shown while (explicit /camera/on with fresh heartbeat) OR (any camera reported unavailable = in use).
+ * Shown ONLY during an explicit Phone Hands remote-view session: a client (e.g. look.py) called
+ * /camera/on and the most recent heartbeat is still fresh (see active(), which returns explicitOn).
+ * The CameraManager availability callback and cameraInUse() are NOT a trigger; they serve only as
+ * (a) corroboration within an explicit session (the seenInUseSinceOn logic and the RELEASE_MS
+ * early-clear in watchdog()) and (b) a diagnostic field (camerasInUse) in status(). Everyday camera
+ * use by other apps therefore never raises the banner/notification on its own.
  * Watchdog: explicit-on expires after TIMEOUT_MS without heartbeat, or when the camera, having been
  * seen in use, becomes available again for RELEASE_MS.
  */
@@ -101,7 +106,9 @@ class CameraIndicator {
     void off() { explicitOn = false; main.post(this::apply); }
 
     boolean cameraInUse() { synchronized (inUse) { return !inUse.isEmpty(); } }
-    boolean active() { return explicitOn || cameraInUse(); }
+    /** Banner/notification shown ONLY during an explicit Phone Hands remote-view session.
+     *  cameraInUse() is corroboration/diagnostics only (see watchdog() and status()); it never raises the UI. */
+    boolean active() { return explicitOn; }
 
     /** main thread only */
     void apply() {

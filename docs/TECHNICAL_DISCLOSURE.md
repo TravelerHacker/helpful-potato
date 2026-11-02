@@ -46,7 +46,7 @@
 
 4.3. The host also requests still images of the target's display captured by the phone's camera, which the agent analyses to determine the state of the target's user interface and to decide the next input action. This forms a closed observe-decide-act loop in which the only interfaces to the target computer are its standard input ports/radio and the light emitted by its display.
 
-4.4. The phone visibly indicates on its own screen and in its notification area whenever the camera is in use, with a heartbeat-based watchdog and an independent operating-system camera-availability monitor.
+4.4. The phone visibly indicates on its own screen and in its notification area whenever the agent is remotely viewing the camera, driven by a client heartbeat with a watchdog timeout; an independent operating-system camera-availability monitor is used within such a session as corroboration and for diagnostics, not as a standalone trigger.
 
 ## 5. Brief Description of the Drawings
 
@@ -180,7 +180,7 @@ It then extracts the last frame of the clip with ffmpeg (`-sseof -0.4`, falling 
 
 ### 7.8 Camera-in-use indicator [Implemented]
 
-7.8.1. The phone shows a high-importance ongoing notification ("Camera ON - remote viewing"), a red full-width overlay banner below the status bar (window type `TYPE_APPLICATION_OVERLAY`, non-focusable, non-touchable; requires the `SYSTEM_ALERT_WINDOW` app-op), and a red label in the application whenever either (a) a client has called `/camera/on` and the most recent heartbeat is less than 15 s old, or (b) Android's `CameraManager.AvailabilityCallback` reports any camera as unavailable (in use), which covers sessions whose client crashed and use of the camera by other software. An explicit "on" state is also cleared when the camera, having been seen in use, has been free for 4 s.
+7.8.1. The phone shows a high-importance ongoing notification ("Camera ON - remote viewing"), a red full-width overlay banner below the status bar (window type `TYPE_APPLICATION_OVERLAY`, non-focusable, non-touchable; requires the `SYSTEM_ALERT_WINDOW` app-op), and a red label in the application whenever, and only whenever, a remote-view session is active, that is, a client has called `/camera/on` and the most recent heartbeat is less than 15 s old. Android's `CameraManager.AvailabilityCallback`, which reports any camera as unavailable (in use), is not itself a trigger for the indicator; it is used only within an active session as corroboration and to clear the session early, and as a diagnostic. Specifically, an active session is cleared when 15 s pass with no heartbeat, or when the camera, having been seen in use during the session, has subsequently been free for 4 s (so that a session whose client crashed is cleared once the camera is released); and the set of cameras currently reported in use is exposed in the `/status` response for debugging. Camera use by other software, on its own, does not raise the indicator.
 
 ### 7.9 Closed-loop operation by an agent (method) [Implemented: as tools since v1.0.0; as an automated loop in `agent.py` since v1.1.0, see 7.10]
 
@@ -235,7 +235,7 @@ The following embodiments are disclosed. Each may be combined with any other com
 2. **[Implemented, not hardware-verified]** The system of embodiment 1 wherein, instead of or in addition to Bluetooth, the phone's USB port operates in host mode and drives a USB-serial adapter connected to a serial-to-USB-HID bridge chip (CH9329) whose USB side is connected to the target computer, the phone encoding keyboard, relative-mouse and absolute-mouse commands in the bridge's framed serial protocol.
 3. **[Implemented]** The system of embodiment 1 or 2 with automatic backend selection that prefers the wired bridge when present and falls back to Bluetooth.
 4. **[Implemented]** The system of any preceding embodiment wherein each still image is obtained by recording a short camera clip through a screen/camera mirroring tool and extracting its last frame, so that exposure and focus settle.
-5. **[Implemented]** The system of any preceding embodiment with a camera-in-use indicator driven by both a client heartbeat with timeout and an operating-system camera-availability callback.
+5. **[Implemented]** The system of any preceding embodiment with a remote-view indicator driven by a client heartbeat with timeout, using an operating-system camera-availability callback as in-session corroboration and diagnostics.
 6. **[Implemented]** The method of section 7.9: repeatedly capturing an image of a target display by a phone camera, interpreting it by an agent, and causing the phone to emit HID input to the target according to the agent's decision, and verifying the result by a subsequent image.
 7. **[Implemented]** Use of a retired or secondary mobile phone, held on a stand, as the sole hardware (apart from optional cables) needed to give an agent keyboard, mouse and visual access to a computer on which no software is installed.
 8. **[Implemented]** The system wherein the host-to-phone debug channel runs over a wireless network or an IP tunnel (adb over TCP/IP), so that the agent may be located remotely from both the phone and the target.

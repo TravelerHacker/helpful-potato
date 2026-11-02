@@ -311,7 +311,7 @@ About power: while the phone's USB-C port is in OTG host mode it usually can't c
    ./look.py --camera-id 0 --size 1280x720
    ```
 
-While the camera's in use, the phone shows a high-priority *Camera ON - remote viewing* notification and a red banner. The banner needs the overlay permission from section 6.
+While Phone Hands is viewing the camera remotely, the phone shows a high-priority *Camera ON - remote viewing* notification and a red banner. The banner needs the overlay permission from section 6. (It is tied to an active remote-view session, not to mere camera use by other apps.)
 
 ## 10. Using hid.py (keyboard and mouse)
 
