@@ -4,6 +4,10 @@
 
 **Give an AI agent hands and eyes on a real computer, using an Android phone.**
 
+> **Got an old phone in a drawer?** This is a second life for a retired Android phone. Prop it on a stand facing your monitor, plug it in (or pair over Bluetooth), and it becomes a remote keyboard, mouse and camera that an AI agent can use to work on that computer: no software on the target, no capture card, no $200 KVM box. Any Android 9+ phone with Bluetooth works for the wireless mode; Android 12+ is needed for the camera stream.
+>
+> *iPhone?* Not supported yet. iOS doesn't let apps act as a Bluetooth keyboard/mouse or expose an adb-style debug connection. An old iPhone could still serve as the camera ("eyes") with a third-party webcam app, while a cheap USB bridge handles the "hands". Contributions welcome.
+
 Phone Hands turns an Android phone (developed on a Pixel) into a remote **keyboard + mouse** for a target computer and uses the phone's **rear camera** to look at that computer's screen. An agent (or you) on a host machine drives it over `adb`: no software is installed on the target computer, which just sees a normal Bluetooth or USB keyboard/mouse.
 
 > ⚠️ This is an experimental tool that can type and click on a computer. Read the [Security](#security-warning) section before using it.
