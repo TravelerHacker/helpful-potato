@@ -204,4 +204,8 @@ Privacy notes:
 
 ## License
 
-MIT, see [LICENSE](LICENSE). Bundles usb-serial-for-android 3.10.0 (MIT, © Google Inc. and Mike Wakerly), see [`app/libs/usb-serial-for-android.LICENSE.txt`](app/libs/usb-serial-for-android.LICENSE.txt).
+**PolyForm Noncommercial 1.0.0**, see [LICENSE](LICENSE).
+
+This project exists so people can build their own AI "hands and eyes" for their computers, not so someone can package it up and sell it. You're free to use, study, modify and share it for personal, hobby, research, educational and nonprofit purposes. Commercial use (selling it, bundling it in a product or paid service) is not permitted without written permission from the author.
+
+Bundled third-party code keeps its own license: usb-serial-for-android 3.10.0 (MIT, © Google Inc. and Mike Wakerly), see [`app/libs/usb-serial-for-android.LICENSE.txt`](app/libs/usb-serial-for-android.LICENSE.txt).
