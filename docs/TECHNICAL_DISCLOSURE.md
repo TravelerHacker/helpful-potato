@@ -366,6 +366,20 @@ These 2.4 GHz embodiments are disclosed for operating equipment the operator own
 
 9.10.4. *Self-contained visual agent as brain.* Instead of the brain making a separate cloud LLM call per step (7.10), the brain may be an agent with its own built-in or bundled vision model: a local VLM on the bridge host or on the phone itself; an operating-system "computer use" agent; or a vendor computer-use agent that directly takes screen video (or frames) and emits pointer/keyboard actions. The phone then only provides transport of eyes (9.10.1) and hands (7.5, 9.1): its video goes into the agent, the agent's actions are mapped onto the same `/key`, `/type`, `/mouse` commands of 7.2–7.3. The authorization constraints above apply unchanged.
 
+### 9.11 Accessibility for blind and low-vision users [Alternative, enabling; not implemented]
+
+Contemplated, not implemented. The helper's camera (eyes) and HID output (hands) can serve as an external accessibility layer for a target machine that has no screen reader, magnifier, or other assistive software installed — including BIOS/UEFI, boot menus, installers, and locked-down or broken OS environments where on-target accessibility tools cannot run. Nothing is installed on the target: the phone (or other helper of 9.6) sees the display optically and injects keyboard/mouse reports as an ordinary HID device.
+
+9.11.1. *Screen reading and description.* The brain (7.10 / 9.5 / 9.10) consumes frames or live video from the eyes and produces spoken or structured descriptions for the user: layout of windows and controls, OCR of visible text, cursor and focus location when inferable from the image, dialog and error content, and changes after each HID action. Output may be text-to-speech (TTS) on the helper, the bridge host, or a paired audio device, and/or a textual summary the user can hear through their own screen reader on a separate device.
+
+9.11.2. *Voice commands driving the agent.* The user speaks goals or low-level actions ("open Settings", "read the dialog", "Tab three times", "click OK"). Speech-to-text on the helper or bridge turns utterances into the same agent loop of 7.9–7.10 (or guided-repair of 9.8), so the agent navigates, clicks, and types on the target on the user's behalf. Confirmation before destructive actions follows the human-supervised modes of 9.8.
+
+9.11.3. *Guided help for inaccessible firmware and installers.* BIOS/UEFI setup, boot menus, disk encryption prompts, and OS installers often lack usable accessibility APIs. The same camera-plus-HID path of 7.1–7.7 can narrate those screens and accept voice (or other) input to press the right keys, including the dry-run / confirm-before-act forms of 9.8 where the agent proposes the next key and the user approves.
+
+9.11.4. *Combination with continuous video (9.10).* Live-stream eyes (9.10.1) plus a video-consuming brain (9.10.2) enable continuous narration: the agent describes the screen as it changes (boot text scrolling, progress bars, fleeting POST prompts) without waiting for a fresh still capture. Event-triggered or hybrid capture (9.10.3) keeps latency and bandwidth practical while still feeding OCR and layout description.
+
+Authorization, non-installation on the target, and the limitation that everything in section 9 is alternative unless a sub-section states otherwise, apply unchanged.
+
 ## 10. Implementation Status and Limitations (as of 2026-11-01)
 
 - Bluetooth HID backend, HTTP API, host CLIs, camera capture, and camera indicator: implemented and used on one Google Pixel phone.
